@@ -145,6 +145,42 @@ contract Project {
         
         emit PaymentProcessed(_subscriptionId, msg.sender, monthlyAmount, block.timestamp);
     }
+
+    /**
+     * @dev Renew an expired or active subscription by extending its duration
+     * @param _subscriptionId ID of the subscription to renew
+     * @param _additionalMonths Number of months to extend
+     */
+    function renewSubscription(uint256 _subscriptionId, uint256 _additionalMonths) external payable onlySubscriber(_subscriptionId) {
+        Subscription storage subscription = subscriptions[_subscriptionId];
+        require(_additionalMonths > 0, "Must renew for at least 1 month");
+
+        uint256 totalAmount = subscription.monthlyAmount * _additionalMonths;
+        require(msg.value >= totalAmount, "Insufficient payment for renewal");
+
+        // If subscription is expired, reset timing
+        if (block.timestamp > subscription.startTime + (subscription.duration * MONTH_IN_SECONDS)) {
+            subscription.startTime = block.timestamp;
+            subscription.lastPaymentTime = block.timestamp;
+            subscription.duration = _additionalMonths;
+        } else {
+            // Still active, just extend duration
+            subscription.duration += _additionalMonths;
+        }
+
+        providerBalances[subscription.serviceProvider] += subscription.monthlyAmount;
+
+        if (msg.value > totalAmount) {
+            payable(msg.sender).transfer(msg.value - totalAmount);
+        }
+
+        if (!subscription.isActive) {
+            subscription.isActive = true;
+            serviceProviders[subscription.serviceProvider].totalSubscribers++;
+        }
+
+        emit PaymentProcessed(_subscriptionId, msg.sender, subscription.monthlyAmount, block.timestamp);
+    }
     
     /**
      * @dev Cancel an active subscription
